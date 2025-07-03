@@ -1,0 +1,1661 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1">
+    <title>ZenzoBar Orders</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    
+    <!-- Firebase v9 SDK -->
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js';
+        import { getFirestore, doc, setDoc, onSnapshot } from 'https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js';
+        
+        // 🔥 TUA CONFIGURAZIONE FIREBASE
+        const firebaseConfig = {
+            apiKey: "AIzaSyAlYaxfd7JScPfwayxUF6um5fbU2CQ8SWg",
+            authDomain: "zenzobar-edbdc.firebaseapp.com", 
+            projectId: "zenzobar-edbdc",
+            storageBucket: "zenzobar-edbdc.firebasestorage.app",
+            messagingSenderId: "408846717271",
+            appId: "1:408846717271:web:53e2132f8370b9eb325612"
+        };
+
+        // Inizializza Firebase
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        
+        // Rendi Firebase globale per l'app
+        window.firebaseApp = app;
+        window.firebaseDb = db;
+        window.firebaseDoc = doc;
+        window.firebaseSetDoc = setDoc;
+        window.firebaseOnSnapshot = onSnapshot;
+        
+        console.log('🔥 Firebase inizializzato con successo!');
+        
+        // Notifica che Firebase è pronto
+        window.dispatchEvent(new Event('firebaseReady'));
+    </script>
+</head>
+<body>
+    <div id="app">
+        <div class="flex items-center justify-center min-h-screen">
+            <div class="text-center">
+                <div class="animate-spin rounded-full h-32 w-32 border-b-2 border-orange-500 mx-auto"></div>
+                <p class="mt-4 text-gray-600">Caricamento ZenzoBar...</p>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Modal per note -->
+    <div id="noteModal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-50 flex items-center justify-center">
+        <div class="bg-white rounded-lg p-6 w-96 max-w-full mx-4">
+            <h3 class="text-lg font-bold mb-4">📝 Aggiungi Nota</h3>
+            <div id="noteItemInfo" class="mb-4 p-3 bg-gray-50 rounded"></div>
+            <textarea id="noteInput" rows="3" class="w-full border rounded p-3 mb-4" placeholder="Scrivi qui la tua nota..."></textarea>
+            <div class="flex gap-3 justify-end">
+                <button onclick="app.cancelNote()" class="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600">
+                    Annulla
+                </button>
+                <button onclick="app.saveNote()" class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">
+                    ✅ Salva Nota
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal per ordine libero -->
+    <div id="freeOrderModal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-50 flex items-center justify-center">
+        <div class="bg-white rounded-lg p-6 w-96 max-w-full mx-4">
+            <h3 class="text-lg font-bold mb-4">🆓 Ordine Libero</h3>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium mb-2">Nome Articolo:</label>
+                    <input type="text" id="freeItemName" class="w-full border rounded p-3" placeholder="Es: Acqua extra, Pane...">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-2">Prezzo (€):</label>
+                    <input type="number" step="0.1" min="0" id="freeItemPrice" class="w-full border rounded p-3" placeholder="0.00">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-2">Note (opzionale):</label>
+                    <textarea id="freeItemNote" rows="2" class="w-full border rounded p-3" placeholder="Note aggiuntive..."></textarea>
+                </div>
+            </div>
+            <div class="flex gap-3 justify-end mt-6">
+                <button onclick="app.cancelFreeOrder()" class="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600">
+                    Annulla
+                </button>
+                <button onclick="app.saveFreeOrder()" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+                    ➕ Aggiungi
+                </button>
+            </div>
+        </div>
+        </div>
+
+        <div id="aiAnalyticsModal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-50 flex items-center justify-center">
+    <div class="bg-white rounded-lg p-6 w-full max-w-6xl mx-4 max-h-[90vh] overflow-y-auto">
+        <div class="flex justify-between items-center mb-6">
+            <h3 class="text-2xl font-bold text-purple-800">🤖 AI Analytics Dashboard</h3>
+            <button onclick="app.closeAIModal()" class="text-gray-500 hover:text-gray-700 text-2xl">✕</button>
+        </div>
+        <div id="aiAnalyticsContent">
+            <div class="text-center py-8">
+                <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-500 mx-auto"></div>
+                <p class="mt-4 text-gray-600">Claude sta analizzando i tuoi dati...</p>
+            </div>
+        </div>
+    </div>
+</div>
+        
+    
+    
+    <script>
+        // Firebase Service
+        class FirebaseService {
+            constructor() {
+                this.db = null;
+                this.listeners = [];
+                this.isInitialized = false;
+                
+                if (window.firebaseDb) {
+                    this.initializeFirebase();
+                } else {
+                    window.addEventListener('firebaseReady', () => {
+                        this.initializeFirebase();
+                    });
+                }
+            }
+            
+            initializeFirebase() {
+                this.db = window.firebaseDb;
+                this.isInitialized = true;
+                console.log('🔥 FirebaseService pronto!');
+                
+                this.listeners.forEach(listener => {
+                    this.setupRealListener(listener);
+                });
+            }
+            
+            async setupRealListener(listener) {
+                if (!this.isInitialized || !this.db) return;
+                
+                try {
+                    const docRef = window.firebaseDoc(this.db, 'zenzobar', listener.path);
+                    
+                    const unsubscribe = window.firebaseOnSnapshot(docRef, (docSnap) => {
+                        console.log(`🔥 Firebase update per ${listener.path}`);
+                        const data = docSnap.exists() ? docSnap.data().value : this.getDefaultValue(listener.path);
+                        listener.callback(data);
+                    }, (error) => {
+                        console.error(`❌ Errore listener Firebase per ${listener.path}:`, error);
+                    });
+                    
+                    listener.unsubscribe = unsubscribe;
+                } catch (error) {
+                    console.error('Errore setup listener Firebase:', error);
+                }
+            }
+            
+            getDefaultValue(path) {
+                switch(path) {
+                    case 'activeOrders':
+                    case 'orderHistory':
+                    case 'tables':
+                        return [];
+                    case 'orders':
+                        return {};
+                    default:
+                        return {};
+                }
+            }
+            
+            onSnapshot(path, callback) {
+                const listener = { path, callback };
+                this.listeners.push(listener);
+                
+                if (this.isInitialized) {
+                    this.setupRealListener(listener);
+                } else {
+                    const currentData = this.getDefaultValue(path);
+                    callback(currentData);
+                }
+                
+                return () => {
+                    this.listeners = this.listeners.filter(l => l.callback !== callback);
+                    if (listener.unsubscribe) {
+                        listener.unsubscribe();
+                    }
+                };
+            }
+            
+            async update(path, newData) {
+                console.log(`🔄 Aggiornamento: ${path}`, newData);
+                
+                if (this.isInitialized && this.db) {
+                    try {
+                        const docRef = window.firebaseDoc(this.db, 'zenzobar', path);
+                        await window.firebaseSetDoc(docRef, { value: newData, timestamp: new Date() });
+                        console.log(`🔥 Firebase aggiornato: ${path}`);
+                    } catch (error) {
+                        console.error(`❌ Errore aggiornamento Firebase per ${path}:`, error);
+                    }
+                } else {
+                    console.log('Firebase non ancora pronto, aggiornamento in coda...');
+                }
+            }
+            
+            getConnectionState() {
+                return this.isInitialized && navigator.onLine;
+            }
+        }
+        
+        const firebaseService = new FirebaseService();
+
+// AI Analytics Service
+class AIAnalyticsService {
+    constructor() {
+        this.isAnalyzing = false;
+    }
+
+    async analyzeOrderData(orderHistory) {
+    if (this.isAnalyzing) return;
+    this.isAnalyzing = true;
+
+    try {
+        // ✅ SIMULAZIONE ANALISI AI CON I TUOI DATI REALI
+        const totalOrders = orderHistory.length;
+        const totalRevenue = orderHistory.reduce((sum, order) => sum + order.total, 0);
+        const averageOrderValue = totalRevenue / totalOrders;
+        
+        // Estrai articoli più venduti
+        const itemCounts = {};
+        orderHistory.forEach(order => {
+            order.items.forEach(item => {
+                const key = item.name;
+                if (!itemCounts[key]) {
+                    itemCounts[key] = { name: key, quantity: 0, revenue: 0 };
+                }
+                itemCounts[key].quantity += item.quantity;
+                itemCounts[key].revenue += item.price * item.quantity;
+            });
+        });
+        
+        const topSellingItems = Object.values(itemCounts)
+            .sort((a, b) => b.revenue - a.revenue)
+            .slice(0, 5);
+
+        return {
+            summary: {
+                totalOrders,
+                totalRevenue,
+                averageOrderValue,
+                peakHours: ["18:00-20:00", "20:00-22:00"],
+                topSellingItems
+            },
+            insights: [
+                {
+                    type: "trend",
+                    title: "Pattern di vendita identificato",
+                    description: `Scontrino medio di €${averageOrderValue.toFixed(2)} indica clientela di fascia media-alta`,
+                    impact: "medium"
+                },
+                {
+                    type: "opportunity",
+                    title: "Articolo top performer",
+                    description: `${topSellingItems[0]?.name} genera il ${((topSellingItems[0]?.revenue / totalRevenue) * 100).toFixed(1)}% del fatturato`,
+                    impact: "high"
+                }
+            ],
+            recommendations: [
+                {
+                    category: "menu",
+                    action: `Promuovi ${topSellingItems[0]?.name} come signature dish`,
+                    expectedImpact: "Incremento vendite del 15-20%",
+                    priority: "high"
+                },
+                {
+                    category: "pricing",
+                    action: "Considera bundle con articoli complementari",
+                    expectedImpact: "Aumento scontrino medio del 10%",
+                    priority: "medium"
+                }
+            ],
+            scenarios: [
+                {
+                    name: "Crescita Graduale",
+                    description: "Incremento prezzi 5% + promozione top items",
+                    revenueProjection: totalRevenue * 1.25,
+                    confidence: "high"
+                }
+            ]
+        };
+
+    } catch (error) {
+        console.error('Errore analisi AI:', error);
+        return this.getDefaultAnalysis();
+    } finally {
+        this.isAnalyzing = false;
+    }
+}
+
+    getDefaultAnalysis() {
+        return {
+            summary: {
+                totalOrders: 0,
+                totalRevenue: 0,
+                averageOrderValue: 0,
+                peakHours: [],
+                topSellingItems: []
+            },
+            insights: [
+                {
+                    type: "info",
+                    title: "Dati insufficienti",
+                    description: "Servono più ordini per generare insights significativi",
+                    impact: "low"
+                }
+            ],
+            recommendations: [
+                {
+                    category: "data",
+                    action: "Raccogliere più dati di vendita",
+                    expectedImpact: "Migliori insights AI",
+                    priority: "high"
+                }
+            ],
+            scenarios: []
+        };
+    }
+}
+
+const aiService = new AIAnalyticsService();
+        
+        // ZenzoBar App
+        class ZenzoBarApp {
+            constructor() {
+                this.state = {
+                    currentView: 'tables',
+                    selectedTable: null,
+                    orders: {},
+                    orderHistory: [],
+                    activeOrders: [],
+                    showSettings: false,
+                    tableCount: 8,
+                    customTables: [],
+                    editingTable: null,
+                    isOnline: true,
+                    syncStatus: 'Inizializzazione...',
+                    customMenuData: null,
+                    expandedCategories: {},
+                    currentNoteItem: null,
+                    currentNoteIndex: null,
+                    aiAnalysis: null,
+                    activeTab: 'menu', 
+                    showAIModal: false
+                };
+                
+                this.init();
+            }
+            
+            init() {
+                this.setupFirebaseListeners();
+                this.render();
+                
+                setInterval(() => {
+                    const online = firebaseService.getConnectionState();
+                    this.setState({ isOnline: online });
+                    if (!online) {
+                        this.setState({ syncStatus: '🔴 Offline' });
+                    }
+                }, 5000);
+            }
+            
+            setupFirebaseListeners() {
+                this.setState({ syncStatus: '🔄 Connessione Firebase...' });
+                
+                try {
+                    firebaseService.onSnapshot('orders', (data) => {
+                        console.log('📨 Ricevuti orders:', data);
+                        this.setState({ 
+                            orders: data || {}, 
+                            syncStatus: '🔥 Sincronizzato Firebase'
+                        });
+                    });
+
+                    firebaseService.onSnapshot('activeOrders', (data) => {
+                        console.log('📨 Ricevuti activeOrders:', data);
+                        this.setState({ 
+                            activeOrders: Array.isArray(data) ? data : []
+                        });
+                    });
+
+                    firebaseService.onSnapshot('orderHistory', (data) => {
+                        console.log('📨 Ricevuti orderHistory:', data);
+                        this.setState({ orderHistory: Array.isArray(data) ? data : [] });
+                    });
+
+                    firebaseService.onSnapshot('tables', (data) => {
+                        console.log('📨 Ricevuti tables:', data);
+                        if (Array.isArray(data) && data.length > 0) {
+                            this.setState({ customTables: data });
+                        }
+                    });
+
+                    firebaseService.onSnapshot('menuData', (data) => {
+                        console.log('📨 Ricevuti menuData:', data);
+                        this.setState({ customMenuData: data });
+                    });
+                    
+                } catch (error) {
+                    console.error('Errore setup Firebase listeners:', error);
+                    this.setState({ syncStatus: '❌ Errore connessione' });
+                }
+            }
+            
+           setState(newState) {
+    console.log('🔄 setState chiamata', Object.keys(newState));
+
+    // 🔄 Salva lo scroll prima del render
+    const scrollContainers = document.querySelectorAll('.menu-scrollable');
+    const scrollTops = Array.from(scrollContainers).map(sc => sc.scrollTop);
+
+    const oldExpandedCategories = this.state.expandedCategories;
+    this.state = { ...this.state, ...newState };
+    if (!newState.hasOwnProperty('expandedCategories')) {
+        this.state.expandedCategories = oldExpandedCategories;
+    }
+
+    this.render();
+
+    // ⏱️ Dopo il rendering, ripristina lo scroll con un frame di ritardo
+    requestAnimationFrame(() => {
+        const newScrollContainers = document.querySelectorAll('.menu-scrollable');
+        newScrollContainers.forEach((sc, i) => {
+            sc.scrollTop = scrollTops[i] || 0;
+        });
+    });
+}
+            
+            render() {
+                console.log('🎨 render() chiamata, vista corrente:', this.state.currentView);
+                
+                const appElement = document.getElementById('app');
+                if (!appElement) {
+                    console.error('❌ Elemento #app non trovato!');
+                    return;
+                }
+                
+                let content = '';
+                
+                switch(this.state.currentView) {
+                    case 'tables':
+                        content = this.renderTableView();
+                        break;
+                    case 'menu':
+                        content = this.renderMenuView();
+                        break;
+                    case 'kitchen':
+                        content = this.renderKitchenView();
+                        break;
+                    case 'history':
+                        content = this.renderHistoryView();
+                        break;
+                    default:
+                        content = this.renderTableView();
+                }
+                
+                appElement.innerHTML = content;
+            }
+            
+            get menuCategories() {
+                if (this.state.customMenuData) {
+                    return this.state.customMenuData;
+                }
+                
+                return {
+                    "Cocktail Analcolico": [
+                        { id: 1, name: "Acqua Rinfrescante allo Zenzero", price: 6, ingredients: "Zenzero fresco Limone Miele Acqua fredda", description: "Fresco, dissetante, con le note pungenti dello zenzero." },
+                        { id: 2, name: "Zenzapero", price: 6, ingredients: "Bevanda naturale allo zenzero Acqua tonica Zenzero fresco", description: "" },
+                        { id: 3, name: "Hulky", price: 7, ingredients: "Kiwi Succo di mela Tonica Basilico fresco", description: "Verde brillante, carattere fresco. Mix energico e botanico." },
+                        { id: 4, name: "Tropicana", price: 7, ingredients: "Succo Ananas Sciroppo di Cocco Succo Arancia", description: "Un sorso d'estate: ananas, cocco, arancia e tonica." }
+                    ],
+                    "Bevande": [
+                        { id: 5, name: "Caffè", price: 1.2, ingredients: "Caffè in grani, acqua", description: "Miscela dal gusto pieno e rotondo." },
+                        { id: 6, name: "Cappuccino", price: 1.5, ingredients: "Latte fresco, caffè", description: "Un abbraccio caldo per iniziare la giornata." },
+                        { id: 7, name: "Acqua naturale", price: 1, ingredients: "Acqua", description: "Acqua sempre disponibile." }
+                    ],
+                    "Cocktail": [
+                        { id: 13, name: "CHIOSCO AL MARE", price: 15, ingredients: "Gin dry Vermouth bianco Cetriolo Lime", description: "Il nostro cocktail signature. Botanico e pulito." },
+                        { id: 14, name: "Ginger Mule Light", price: 10, ingredients: "Vodka infusa allo zenzero Lime Ginger beer", description: "Classico con spirito Zenzo." }
+                    ]
+                };
+            }
+            
+            generateTableLayout(count) {
+                const tables = [];
+                for (let i = 0; i < count; i++) {
+                    const seats = i % 3 === 0 ? 6 : i % 2 === 0 ? 4 : 2;
+                    tables.push({ id: i + 1, number: i + 1, seats: seats });
+                }
+                return tables;
+            }
+            
+            get tables() {
+                return this.state.customTables.length > 0 ? this.state.customTables : this.generateTableLayout(this.state.tableCount);
+            }
+            
+            getCurrentOrder() {
+                return this.state.orders[this.state.selectedTable] || [];
+            }
+
+            // ✅ METODI PER NOTE
+            showNoteModal(item, orderIndex = null) {
+                console.log('📝 Mostra modal nota per:', item.name, 'index:', orderIndex);
+                
+                this.state.currentNoteItem = item;
+                this.state.currentNoteIndex = orderIndex;
+                
+                const noteItemInfo = document.getElementById('noteItemInfo');
+                noteItemInfo.innerHTML = `
+                    <div class="font-medium">${item.name}</div>
+                    <div class="text-sm text-gray-600">€${item.price.toFixed(2)}</div>
+                `;
+                
+                const noteInput = document.getElementById('noteInput');
+                if (orderIndex !== null) {
+                    const currentOrder = this.getCurrentOrder();
+                    const existingNote = currentOrder[orderIndex]?.note || '';
+                    noteInput.value = existingNote;
+                } else {
+                    noteInput.value = '';
+                }
+                
+                document.getElementById('noteModal').classList.remove('hidden');
+                noteInput.focus();
+            }
+
+            cancelNote() {
+                console.log('❌ Annulla nota');
+                document.getElementById('noteModal').classList.add('hidden');
+                this.state.currentNoteItem = null;
+                this.state.currentNoteIndex = null;
+            }
+
+            async saveNote() {
+                const noteInput = document.getElementById('noteInput');
+                const note = noteInput.value.trim();
+                
+                console.log('💾 Salva nota:', note);
+                
+                if (this.state.currentNoteIndex !== null) {
+                    await this.updateItemNote(this.state.currentNoteIndex, note);
+                } else {
+                    await this.addToOrder(this.state.currentNoteItem, note);
+                }
+                
+                this.cancelNote();
+            }
+
+            async updateItemNote(orderIndex, note) {
+                const currentOrder = this.getCurrentOrder();
+                const updatedOrder = [...currentOrder];
+                updatedOrder[orderIndex] = { ...updatedOrder[orderIndex], note: note };
+                
+                const updatedTableOrders = {
+                    ...this.state.orders,
+                    [this.state.selectedTable]: updatedOrder
+                };
+                
+                this.setState({ orders: updatedTableOrders });
+                await firebaseService.update('orders', updatedTableOrders);
+            }
+
+            // ✅ METODI PER ORDINE LIBERO
+            showFreeOrderModal() {
+                console.log('🆓 Mostra modal ordine libero');
+                
+                document.getElementById('freeItemName').value = '';
+                document.getElementById('freeItemPrice').value = '';
+                document.getElementById('freeItemNote').value = '';
+                
+                document.getElementById('freeOrderModal').classList.remove('hidden');
+                document.getElementById('freeItemName').focus();
+            }
+
+            cancelFreeOrder() {
+                console.log('❌ Annulla ordine libero');
+                document.getElementById('freeOrderModal').classList.add('hidden');
+            }
+
+            async saveFreeOrder() {
+                const name = document.getElementById('freeItemName').value.trim();
+                const price = parseFloat(document.getElementById('freeItemPrice').value) || 0;
+                const note = document.getElementById('freeItemNote').value.trim();
+                
+                if (!name) {
+                    alert('❌ Inserisci il nome dell\'articolo');
+                    return;
+                }
+
+                if (price <= 0) {
+                    alert('❌ Inserisci un prezzo valido');
+                    return;
+                }
+
+                console.log('💾 Salva ordine libero:', { name, price, note });
+
+                const freeItem = {
+                    id: `free_${Date.now()}`,
+                    name: name,
+                    price: price,
+                    ingredients: '',
+                    description: 'Ordine libero',
+                    isFreeOrder: true
+                };
+
+                await this.addToOrder(freeItem, note);
+                this.cancelFreeOrder();
+            }
+
+// Metodi AI
+async showAIAnalytics() {
+    this.setState({ showAIModal: true });
+    
+    const modal = document.getElementById('aiAnalyticsModal');
+    modal.classList.remove('hidden');
+    
+    // Analizza i dati
+    const analysis = await aiService.analyzeOrderData(this.state.orderHistory);
+    
+    this.setState({ aiAnalysis: analysis });
+    this.renderAIAnalytics();
+}
+
+closeAIModal() {
+    document.getElementById('aiAnalyticsModal').classList.add('hidden');
+    this.setState({ showAIModal: false });
+}
+
+renderAIAnalytics() {
+    const content = document.getElementById('aiAnalyticsContent');
+    if (!this.state.aiAnalysis) return;
+
+    const { summary, insights, recommendations } = this.state.aiAnalysis;
+
+    content.innerHTML = `
+        <div class="space-y-6">
+            <!-- Summary Cards -->
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div class="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                    <div class="text-2xl font-bold text-blue-800">${summary.totalOrders}</div>
+                    <div class="text-sm text-blue-600">Ordini Totali</div>
+                </div>
+                <div class="bg-green-50 p-4 rounded-lg border border-green-200">
+                    <div class="text-2xl font-bold text-green-800">€${summary.totalRevenue.toFixed(2)}</div>
+                    <div class="text-sm text-green-600">Fatturato Totale</div>
+                </div>
+                <div class="bg-purple-50 p-4 rounded-lg border border-purple-200">
+                    <div class="text-2xl font-bold text-purple-800">€${summary.averageOrderValue.toFixed(2)}</div>
+                    <div class="text-sm text-purple-600">Scontrino Medio</div>
+                </div>
+                <div class="bg-orange-50 p-4 rounded-lg border border-orange-200">
+                    <div class="text-2xl font-bold text-orange-800">${summary.topSellingItems.length}</div>
+                    <div class="text-sm text-orange-600">Top Items</div>
+                </div>
+            </div>
+
+            <!-- Insights -->
+            <div class="bg-white p-6 rounded-lg border">
+                <h4 class="text-lg font-bold mb-4">🔍 Insights AI</h4>
+                <div class="grid gap-4">
+                    ${insights.map(insight => `
+                        <div class="border-l-4 ${insight.impact === 'high' ? 'border-red-500 bg-red-50' : insight.impact === 'medium' ? 'border-yellow-500 bg-yellow-50' : 'border-blue-500 bg-blue-50'} p-4 rounded">
+                            <div class="flex justify-between items-start">
+                                <div>
+                                    <h5 class="font-semibold ${insight.impact === 'high' ? 'text-red-800' : insight.impact === 'medium' ? 'text-yellow-800' : 'text-blue-800'}">${insight.title}</h5>
+                                    <p class="text-sm text-gray-700 mt-1">${insight.description}</p>
+                                </div>
+                                <span class="text-xs px-2 py-1 rounded ${insight.impact === 'high' ? 'bg-red-200 text-red-800' : insight.impact === 'medium' ? 'bg-yellow-200 text-yellow-800' : 'bg-blue-200 text-blue-800'}">${insight.impact.toUpperCase()}</span>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+
+            <!-- Recommendations -->
+            <div class="bg-white p-6 rounded-lg border">
+                <h4 class="text-lg font-bold mb-4">💡 Raccomandazioni AI</h4>
+                <div class="grid gap-4">
+                    ${recommendations.map(rec => `
+                        <div class="border rounded-lg p-4 ${rec.priority === 'high' ? 'border-red-200 bg-red-50' : rec.priority === 'medium' ? 'border-yellow-200 bg-yellow-50' : 'border-green-200 bg-green-50'}">
+                            <div class="flex justify-between items-start mb-2">
+                                <span class="text-xs font-medium px-2 py-1 rounded ${rec.priority === 'high' ? 'bg-red-200 text-red-800' : rec.priority === 'medium' ? 'bg-yellow-200 text-yellow-800' : 'bg-green-200 text-green-800'}">${rec.category.toUpperCase()}</span>
+                                <span class="text-xs font-medium px-2 py-1 rounded ${rec.priority === 'high' ? 'bg-red-600 text-white' : rec.priority === 'medium' ? 'bg-yellow-600 text-white' : 'bg-green-600 text-white'}">PRIORITÀ ${rec.priority.toUpperCase()}</span>
+                            </div>
+                            <div class="font-semibold text-gray-800">${rec.action}</div>
+                            <div class="text-sm text-gray-600 mt-1">${rec.expectedImpact}</div>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        </div>
+    `;
+}
+            
+            async addToOrder(item, note = '') {
+                const currentOrder = this.getCurrentOrder();
+                
+                if (note || item.isFreeOrder) {
+                    const newItem = { 
+                        ...item, 
+                        quantity: 1, 
+                        note: note,
+                        uniqueId: `${item.id}_${Date.now()}`
+                    };
+                    
+                    const updatedTableOrders = {
+                        ...this.state.orders,
+                        [this.state.selectedTable]: [...currentOrder, newItem]
+                    };
+console.log('🧪 addToOrder - scroll check start', document.querySelector('.menu-scrollable')?.scrollTop);
+
+                    
+                    this.setState({ orders: updatedTableOrders });
+
+                    console.log('🧪 addToOrder - scroll check end', document.querySelector('.menu-scrollable')?.scrollTop);
+
+                    await firebaseService.update('orders', updatedTableOrders);
+                    return;
+                }
+
+                const existingItem = currentOrder.find(orderItem => 
+                    orderItem.id === item.id && !orderItem.note
+                );
+                
+                const updatedTableOrders = {
+                    ...this.state.orders,
+                    [this.state.selectedTable]: existingItem
+                        ? currentOrder.map(orderItem =>
+                            orderItem.id === item.id && !orderItem.note
+                                ? { ...orderItem, quantity: orderItem.quantity + 1 }
+                                : orderItem
+                          )
+                        : [...currentOrder, { ...item, quantity: 1, note: '' }]
+                };
+                
+                this.setState({ orders: updatedTableOrders });
+                await firebaseService.update('orders', updatedTableOrders);
+            }
+            
+            async removeFromOrder(orderIndex) {
+                const currentOrder = this.getCurrentOrder();
+                const item = currentOrder[orderIndex];
+                
+                if (item.quantity > 1) {
+                    const updatedOrder = [...currentOrder];
+                    updatedOrder[orderIndex] = { ...item, quantity: item.quantity - 1 };
+                    
+                    const updatedTableOrders = {
+                        ...this.state.orders,
+                        [this.state.selectedTable]: updatedOrder
+                    };
+                    
+                    this.setState({ orders: updatedTableOrders });
+                    await firebaseService.update('orders', updatedTableOrders);
+                } else {
+                    const updatedOrder = currentOrder.filter((_, index) => index !== orderIndex);
+                    
+                    const updatedTableOrders = {
+                        ...this.state.orders,
+                        [this.state.selectedTable]: updatedOrder
+                    };
+                    
+                    this.setState({ orders: updatedTableOrders });
+                    await firebaseService.update('orders', updatedTableOrders);
+                }
+            }
+            
+            calculateTotal() {
+                return this.getCurrentOrder().reduce((total, item) => total + (item.price * item.quantity), 0);
+            }
+            
+            async printOrder() {
+                const currentOrder = this.getCurrentOrder();
+                if (currentOrder.length === 0) {
+                    alert('Nessun articolo nell\'ordine!');
+                    return;
+                }
+
+                this.setState({ syncStatus: '🔄 Invio in cucina...' });
+                
+                try {
+                    const newOrder = {
+                        id: Date.now(),
+                        tableNumber: this.state.selectedTable,
+                        items: [...currentOrder],
+                        total: this.calculateTotal(),
+                        timestamp: Date.now(),
+                        state: 'sent',
+                        isModified: false,
+                        version: 1
+                    };
+                    
+                    const updatedActiveOrders = [...this.state.activeOrders, newOrder];
+                    this.setState({ activeOrders: updatedActiveOrders });
+                    await firebaseService.update('activeOrders', updatedActiveOrders);
+                    
+                    const clearedOrders = { ...this.state.orders };
+                    delete clearedOrders[this.state.selectedTable];
+                    this.setState({ orders: clearedOrders });
+                    await firebaseService.update('orders', clearedOrders);
+                    
+                    this.setState({ syncStatus: '🔥 Sincronizzato Firebase' });
+                    alert('✅ ORDINE INVIATO IN CUCINA!');
+                    this.setState({ currentView: 'tables' });
+                } catch (error) {
+                    this.setState({ syncStatus: '❌ Errore invio' });
+                    alert('❌ Errore durante l\'invio in cucina. Riprova.');
+                }
+            }
+            
+            toggleCategory(category) {
+                console.log('🔄 Toggle categoria:', category);
+                
+                const currentExpanded = this.state.expandedCategories[category] || false;
+                const newExpanded = !currentExpanded;
+                
+                const newExpandedCategories = {
+                    ...this.state.expandedCategories,
+                    [category]: newExpanded
+                };
+                
+                this.setState({ expandedCategories: newExpandedCategories });
+            }
+
+            expandAllCategories() {
+                console.log('📂 Espandi tutto');
+                const allCategories = Object.keys(this.menuCategories);
+                
+                const newExpandedCategories = {};
+                allCategories.forEach(category => {
+                    newExpandedCategories[category] = true;
+                });
+                
+                this.setState({ expandedCategories: newExpandedCategories });
+            }
+
+            collapseAllCategories() {
+                console.log('📁 Chiudi tutto');
+                this.setState({ expandedCategories: {} });
+            }
+
+           closeOrderFromKitchen(orderId) {
+    const orderToClose = this.state.activeOrders.find(order => order.id == orderId);
+
+    if (!orderToClose) {
+        alert('❌ Ordine non trovato!');
+        return;
+    }
+
+    const ordersToClose = this.state.activeOrders.filter(order => order.tableNumber == orderToClose.tableNumber);
+
+    const closedOrders = ordersToClose.map(o => ({
+        ...o,
+        state: 'paid',
+        closedAt: Date.now(),
+        closedBy: 'kitchen'
+    }));
+
+    const updatedHistory = [...closedOrders, ...this.state.orderHistory];
+    const updatedActiveOrders = this.state.activeOrders.filter(order => order.tableNumber !== orderToClose.tableNumber);
+
+    this.setState({
+        orderHistory: updatedHistory,
+        activeOrders: updatedActiveOrders
+    });
+
+    firebaseService.update('orderHistory', updatedHistory);
+    firebaseService.update('activeOrders', updatedActiveOrders);
+
+    alert(`✅ Tavolo ${orderToClose.tableNumber} incassato e liberato!`);
+}
+
+            closeOrderFromWaiter(tableNumber) {
+               const ordersToClose = this.state.activeOrders.filter(order => order.tableNumber == tableNumber);
+
+if (ordersToClose.length === 0) {
+    alert('❌ Nessun ordine attivo per questo tavolo!');
+    return;
+}
+
+const conferma = window.confirm(`⚠️ LIBERARE TAVOLO ${tableNumber}?\n\nATTENZIONE: Confermi che il cliente ha PAGATO?\n\nOrdine: €${ordersToClose.reduce((tot, o) => tot + o.total, 0).toFixed(2)}\nArticoli: ${ordersToClose.reduce((tot, o) => tot + o.items.reduce((s, i) => s + i.quantity, 0), 0)}\n\nClicca OK solo se il cliente ha già pagato.`);
+
+if (!conferma) return;
+
+const closedOrders = ordersToClose.map(o => ({
+    ...o,
+    state: 'paid',
+    closedAt: Date.now(),
+    closedBy: 'waiter'
+}));
+
+const updatedHistory = [...closedOrders, ...this.state.orderHistory];
+const updatedActiveOrders = this.state.activeOrders.filter(order => order.tableNumber !== tableNumber);
+
+this.setState({
+    orderHistory: updatedHistory,
+    activeOrders: updatedActiveOrders
+});
+
+firebaseService.update('orderHistory', updatedHistory);
+firebaseService.update('activeOrders', updatedActiveOrders);
+
+alert(`✅ Tavolo ${tableNumber} liberato dal cameriere!`);
+            }
+
+            
+
+exportOrderHistoryCSV() {
+    if (!this.state.orderHistory.length) {
+        alert('❌ Nessun ordine da esportare!');
+        return;
+    }
+
+    const rows = [
+        ['Tavolo', 'Data Ora Apertura', 'Data Ora Chiusura', 'Articolo', 'Quantità', 'Prezzo Unitario (€)', 'Totale Item (€)', 'Chiuso da']
+    ];
+
+    this.state.orderHistory.forEach(order => {
+        const apertura = new Date(order.timestamp?.seconds ? order.timestamp.seconds * 1000 : order.timestamp);
+        const chiusura = new Date(order.closedAt?.seconds ? order.closedAt.seconds * 1000 : order.closedAt);
+
+        const aperturaStr = `${apertura.toLocaleDateString('it-IT')} ${apertura.toLocaleTimeString('it-IT')}`;
+        const chiusuraStr = `${chiusura.toLocaleDateString('it-IT')} ${chiusura.toLocaleTimeString('it-IT')}`;
+        const chiusoDa = order.closedBy === 'kitchen' ? 'Cucina' : 'Cameriere';
+
+        order.items.forEach(item => {
+            rows.push([
+                order.tableNumber,
+                aperturaStr,
+                chiusuraStr,
+                item.name,
+                item.quantity,
+                item.price.toFixed(2),
+                (item.price * item.quantity).toFixed(2),
+                chiusoDa
+            ]);
+        });
+    });
+
+    const csvContent = rows.map(r => r.join(',')).join('\n');
+    const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' });
+
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    const today = new Date().toISOString().split('T')[0];
+    link.download = `storico_ordini_${today}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+            
+            renderHistoryView() {
+    const groupedByDate = this.state.orderHistory.reduce((acc, order) => {
+        const ts = order.timestamp?.seconds ? new Date(order.timestamp.seconds * 1000) : new Date(order.timestamp);
+const dateKey = ts.toLocaleDateString('it-IT');
+        if (!acc[dateKey]) acc[dateKey] = [];
+        acc[dateKey].push(order);
+        return acc;
+    }, {});
+
+    return `
+        <div class="p-6">
+            <div class="flex justify-between items-center mb-6">
+                <h1 class="text-2xl font-bold text-gray-800">Storico Ordini Chiusi</h1>
+                <div class="flex flex-wrap justify-center sm:justify-start gap-2 sm:gap-4">
+                    <button onclick="app.exportOrderHistoryCSV()" class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">
+                        📤 Esporta in CSV
+                    </button>
+                    <button onclick="app.setState({currentView: 'tables'})" class="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700">
+                        ✕ Chiudi
+                    </button>
+                </div>
+            </div>
+
+            ${this.state.orderHistory.length === 0 ? `
+                <div class="text-center text-gray-500 mt-12">
+                    <div class="text-6xl mb-4">🕐</div>
+                    <p>Nessun ordine chiuso oggi</p>
+                    <p class="text-base md:text-sm text-gray-400 mt-2 px-2 text-center md:text-left leading-snug">
+  Gli ordini pagati appariranno qui
+</p>
+                </div>
+            ` : `
+                <div class="space-y-8">
+                    ${Object.entries(groupedByDate).map(([date, orders]) => `
+                        <div>
+                            <h2 class="text-xl font-bold text-gray-700 mb-4">${date}</h2>
+                            <div class="space-y-4">
+                                ${orders.map(order => `
+                                    <div class="bg-white rounded-lg shadow p-4 border">
+                                        <div class="flex justify-between items-start mb-3">
+                                            <div>
+                                                <h3 class="font-bold text-lg">Tavolo ${order.tableNumber}</h3>
+                                                 <button onclick="app.deleteOrderFromHistory(${order.id})" class="text-sm text-red-600 hover:underline ml-2">🗑️ Elimina</button>
+                                                <p class="text-gray-600 text-sm">
+  Ordinato: ${
+    order.timestamp
+      ? new Date(order.timestamp?.seconds ? order.timestamp.seconds * 1000 : order.timestamp).toLocaleString('it-IT')
+      : '—'
+  }
+</p>
+<p class="text-gray-600 text-sm">
+  Chiuso: ${
+    order.closedAt
+      ? new Date(order.closedAt?.seconds ? order.closedAt.seconds * 1000 : order.closedAt).toLocaleString('it-IT')
+      : '—'
+  }
+</p>
+                                                <p class="text-blue-600 text-sm font-medium">
+                                                    Incassato da: ${order.closedBy === 'kitchen' ? '👨‍🍳 Cucina' : '👤 Cameriere'}
+                                                </p>
+                                            </div>
+                                            <div class="text-right">
+                                                <div class="text-2xl font-bold text-green-600">€${order.total.toFixed(2)}</div>
+                                                <div class="text-sm text-gray-500">${order.items.reduce((sum, item) => sum + item.quantity, 0)} articoli</div>
+                                                <div class="text-xs text-green-600 font-medium mt-1">💰 PAGATO</div>
+                                            </div>
+                                        </div>
+
+                                        <div class="border-t pt-3">
+                                            ${order.items.map(item => `
+                                                <div class="flex justify-between text-sm mb-1">
+                                                    <span>${item.quantity}x ${item.name}${item.note ? ` (📝 ${item.note})` : ''}${item.isFreeOrder ? ' 🆓' : ''}</span>
+                                                    <span>€${(item.price * item.quantity).toFixed(2)}</span>
+                                                </div>
+                                            `).join('')}
+                                        </div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            `}
+        </div>
+    `;
+}
+
+            async loadMenuFromCSV(file = null) {
+    try {
+        let csvContent;
+
+        if (file) {
+            csvContent = await new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = e => resolve(e.target.result);
+                reader.onerror = reject;
+                reader.readAsText(file, 'utf-8');
+            });
+        } else {
+            alert("⚠️ Nessun file specificato");
+            return;
+        }
+
+        function parseCSV(content) {
+            const lines = content.replace(/\r\n/g, '\n').split('\n').filter(l => l.trim());
+            const headers = lines[0].split(';').map(h => h.trim().replace(/^"(.*)"$/, '$1'));
+
+            const expected = ['Item', 'CATEGORIA', 'PREZZO'];
+            for (let h of expected) {
+                if (!headers.includes(h)) {
+                    throw new Error(`⚠️ Campo obbligatorio "${h}" mancante nel CSV`);
+                }
+            }
+
+            const data = lines.slice(1).map(line => {
+                const fields = [];
+                let current = '';
+                let inQuotes = false;
+
+                for (let c of line) {
+                    if (c === '"') inQuotes = !inQuotes;
+                    else if (c === ';' && !inQuotes) {
+                        fields.push(current.trim());
+                        current = '';
+                    } else {
+                        current += c;
+                    }
+                }
+                fields.push(current.trim());
+
+                const row = {};
+                headers.forEach((h, i) => {
+                    let v = fields[i] || '';
+                    if (v.startsWith('"') && v.endsWith('"')) {
+                        v = v.slice(1, -1);
+                    }
+                    row[h] = v;
+                });
+                return row;
+            });
+
+            return { headers, data };
+        }
+
+        const parsed = parseCSV(csvContent);
+
+        const grouped = {};
+        let idCounter = 1;
+
+        for (let row of parsed.data) {
+            if (!row['Item'] || !row['CATEGORIA'] || !row['PREZZO']) continue;
+
+            const cat = row['CATEGORIA'];
+            if (!grouped[cat]) grouped[cat] = [];
+
+            grouped[cat].push({
+                id: idCounter++,
+                name: row['Item'],
+                price: parseFloat(row['PREZZO'].replace(',', '.')) || 0,
+                ingredients: row['INGREDIENTI PRINCIPALI'] || '',
+                description: row['STORYTELLING'] || '',
+                fascia: row['FASCIA'] || '',
+                costo: row['COSTO'] || '',
+                margine: row['MARGINE'] || '',
+                foodCost: row['FOOD COST %'] || '',
+                popolarita: row['POPOLARITÀ'] || '',
+                improntaH2O: row['IMPRONTA IDRICA'] || '',
+                improntaCO2: row['IMPRONTA CARBONICA'] || '',
+                foto: row['FOTO'] || ''
+            });
+        }
+
+        await firebaseService.update('menuData', grouped);
+        this.setState({ customMenuData: grouped, syncStatus: '🔥 Menu CSV caricato!' });
+
+        alert(`✅ MENU IMPORTATO\nCategorie: ${Object.keys(grouped).length} • Articoli: ${idCounter - 1}`);
+    } catch (err) {
+        console.error(err);
+        alert(`❌ Errore caricamento CSV:\n\n${err.message}`);
+    }
+}
+
+triggerCSVUpload() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.csv';
+    input.onchange = (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            this.loadMenuFromCSV(file);
+        }
+    };
+    input.click();
+}
+            
+            renderTableView() {
+                return `
+                    <div class="p-6">
+                        <div class="flex justify-between items-center mb-6">
+                            <div>
+                                <h1 class="text-2xl font-bold text-gray-800">🔥 Carita Morena X Zenzo Bar</h1>
+                                <div class="text-sm text-gray-600 mt-1">
+                                    ${this.state.syncStatus} • Multi-Device Ready
+                                </div>
+                            </div>
+                            <div class="flex flex-wrap justify-center sm:justify-start gap-2 sm:gap-4">
+                                <button onclick="app.setState({currentView: 'kitchen'})" class="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700">
+                                    👨‍🍳 Cucina
+                                    ${this.state.activeOrders.length > 0 ? 
+                                        `<span class="bg-yellow-400 text-red-800 rounded-full px-2 py-1 text-xs font-bold">${this.state.activeOrders.length}</span>` 
+                                        : ''
+                                    }
+                                </button>
+                                <button onclick="app.showAIAnalytics()" class="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700">
+    🤖 AI Analytics
+    ${this.state.orderHistory.length > 0 ? 
+        `<span class="bg-yellow-400 text-purple-800 rounded-full px-2 py-1 text-xs font-bold">${this.state.orderHistory.length}</span>` 
+        : ''
+    }
+</button>
+                                <button onclick="app.setState({showSettings: !app.state.showSettings})" class="flex items-center gap-2 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700">
+                                    ⚙️ Configura
+                                </button>
+                                <button onclick="app.setState({currentView: 'history'})" class="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                                    🕐 Storico
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div class="bg-green-100 border-l-4 border-green-500 text-green-700 p-4 mb-6">
+    <p>🤖 Sistema AI attivo • Completa alcuni ordini per sbloccare le analisi intelligenti</p>
+                       
+                     ${this.state.showSettings ? `
+    <div class="bg-white rounded-lg p-6 mb-6 border shadow-sm">
+        <!-- CONFIGURAZIONE MENU -->
+        <h3 class="text-lg font-semibold mb-4">Configurazione Menu</h3>
+        <div class="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+            <h4 class="font-medium mb-3 text-blue-800">📋 Gestione Menu</h4>
+            <div class="space-y-3">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <span class="font-medium">Menu attivo:</span>
+                        <span class="ml-2 px-2 py-1 rounded text-sm ${this.state.customMenuData ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}">
+                            ${this.state.customMenuData ? '📄 Menu CSV' : '🔧 Menu di Default'}
+                        </span>
+                    </div>
+                </div>
+
+                <div class="text-sm text-gray-600">
+                    📊 ${Object.keys(this.state.customMenuData || {}).length} categorie • 
+                    ${Object.values(this.state.customMenuData || {}).reduce((sum, items) => sum + items.length, 0)} articoli
+                </div>
+
+                <div class="flex gap-3 flex-wrap">
+                    <button onclick="app.triggerCSVUpload()" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+                        📂 Carica Menu da CSV
+                    </button>
+                    <button onclick="app.useDefaultMenu()" class="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700">
+                        🔄 Torna al Menu di Default
+                    </button>
+                </div>
+
+                <div class="mt-3 p-3 bg-gray-50 rounded text-sm text-gray-600">
+                    <strong>💡 Come usare:</strong><br/>
+                    • <strong>CSV richiesto:</strong> Item, CATEGORIA, FASCIA, PREZZO, COSTO, MARGINE, ...<br/>
+                    • <strong>Delimitatore:</strong> ; (punto e virgola)<br/>
+                    • Include anche impronta idrica/carbonica e foto
+                </div>
+            </div>
+        </div>
+
+        <!-- CONFIGURAZIONE TAVOLI -->
+        <h3 class="text-lg font-semibold mb-4">Configurazione Tavoli</h3>
+        ...
+    </div>
+` : ''}   
+                        ${this.state.showSettings ? `
+<div class="bg-white rounded-lg p-6 mb-6 border shadow-sm">
+    <h3 class="text-lg font-semibold mb-4">⚙️ Configurazione Tavoli</h3>
+
+    <div class="flex flex-col sm:flex-row sm:items-center sm:gap-4 gap-3 mb-4">
+        <label class="font-medium text-sm">Numero di tavoli:</label>
+        <input type="number" min="1" max="20" value="${this.state.tableCount}" 
+               onchange="app.setState({tableCount: parseInt(this.value) || 1})"
+               class="border rounded px-3 py-2 w-full sm:w-20">
+    </div>
+
+    <div class="flex flex-col sm:flex-row gap-3 mb-4">
+        <button onclick="app.applyTableLayout()" class="w-full sm:w-auto px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm">
+            📐 Applica Layout
+        </button>
+        <button onclick="app.resetTables()" class="w-full sm:w-auto px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 text-sm">
+            🔄 Reset Completo
+        </button>
+    </div>
+
+    <button onclick="app.setState({showSettings: false})" class="w-full sm:w-auto px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 text-sm">
+        Chiudi Configurazione
+    </button>
+</div>
+` : ''}
+                
+                </div> 
+                        
+                        <div class="bg-white rounded-lg p-8 shadow-sm border">
+                            <h2 class="text-lg font-semibold mb-6 text-center text-gray-700">Mappa Tavoli</h2>
+                            
+                            <div class="grid gap-4 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 max-w-full px-2 sm:px-0 justify-center">
+                                ${this.tables.map(table => {
+                                    const hasDraftOrder = this.state.orders[table.id]?.length > 0;
+                                    const activeOrder = this.state.activeOrders.find(order => order.tableNumber === table.id);
+                                    
+                                    let bgColor = 'bg-gradient-to-br from-gray-50 to-gray-100 border-2 border-gray-200';
+                                    let statusText = 'Libero';
+                                    
+                                    if (hasDraftOrder) {
+                                        bgColor = 'bg-gradient-to-br from-yellow-400 to-yellow-600 text-white shadow-lg';
+                                        statusText = 'Bozza';
+                                    } else if (activeOrder) {
+                                        bgColor = 'bg-gradient-to-br from-orange-400 to-orange-600 text-white shadow-lg';
+                                        statusText = 'In Cucina';
+                                    }
+                                    
+                                    return `
+                                        <div onclick="app.selectTable(${table.id})" class="relative w-24 h-24 rounded-xl flex flex-col items-center justify-center cursor-pointer transition-all transform hover:scale-105 active:scale-95 hover:shadow-lg ${bgColor} hover:border-blue-400">
+                                            <div class="font-bold text-lg">${table.number}</div>
+                                            <div class="text-xs flex items-center gap-1 opacity-80">
+                                                👥 ${table.seats}
+                                            </div>
+                                            
+                                            ${(hasDraftOrder || activeOrder) ? `
+                                                <div class="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold shadow-lg">
+                                                    ${hasDraftOrder 
+                                                        ? this.state.orders[table.id].reduce((sum, item) => sum + item.quantity, 0)
+                                                        : activeOrder?.items.reduce((sum, item) => sum + item.quantity, 0) || 0
+                                                    }
+                                                </div>
+                                            ` : ''}
+                                            
+                                            <div class="absolute bottom-1 text-xs font-medium">
+                                                ${statusText}
+                                            </div>
+                                        </div>
+                                    `;
+                                }).join('')}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            renderMenuView() {
+    const table = this.tables.find(t => t.id === this.state.selectedTable);
+    const currentOrder = this.getCurrentOrder();
+    const categories = Object.keys(this.menuCategories);
+
+    return `
+        <div class="flex flex-col h-screen bg-gray-50">
+
+            <!-- Header -->
+            <div class="bg-white shadow-sm p-4 flex flex-col gap-4 md:flex-row md:justify-between md:items-center">
+                <div class="flex items-center gap-3">
+                    <button onclick="app.setState({currentView: 'tables'})" class="p-2 hover:bg-gray-100 rounded-lg">✕</button>
+                    <h1 class="text-xl font-bold">Tavolo ${table?.number}</h1>
+                </div>
+                <div class="flex flex-wrap gap-2 md:gap-4 justify-end">
+                    ${currentOrder.length > 0 ? `
+                        <div class="text-lg font-bold text-green-600">€${this.calculateTotal().toFixed(2)}</div>
+                        <button onclick="app.printOrder()" class="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm">
+                            🖨️ Invia in Cucina
+                        </button>
+                    ` : ''}
+                    <button onclick="app.showFreeOrderModal()" class="flex items-center gap-2 px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-sm">
+                        🆓 Ordine Libero
+                    </button>
+                </div>
+            </div>
+
+            <!-- Tabs (solo mobile) -->
+            <div class="flex md:hidden justify-center gap-4 border-b border-gray-200 bg-white sticky top-0 z-10">
+                <button onclick="app.setState({ activeTab: 'menu' })"
+                    class="${this.state.activeTab === 'menu' ? 'border-b-4 border-blue-500 text-blue-600' : 'text-gray-500'} w-1/2 py-2 text-center font-bold text-sm transition-colors">
+                    📋 Menu
+                </button>
+                <button onclick="app.setState({ activeTab: 'order' })"
+                    class="${this.state.activeTab === 'order' ? 'border-b-4 border-blue-500 text-blue-600' : 'text-gray-500'} w-1/2 py-2 text-center font-bold text-sm transition-colors">
+                    🛒 Ordine
+                </button>
+            </div>
+
+            <!-- Main content -->
+            <div class="flex flex-col md:flex-row flex-1 overflow-hidden">
+
+                <!-- Menu -->
+               <div class="w-full md:w-1/2 overflow-y-auto menu-scrollable"
+                    style="display: ${this.state.activeTab === 'menu' || window.innerWidth >= 768 ? 'block' : 'none'};">
+                    
+                    <!-- Menu Header -->
+                    <div class="sticky top-0 bg-white border-b-2 border-gray-200 p-4 shadow-sm z-10">
+                        <div class="flex justify-between items-center mb-3">
+                            <h2 class="text-lg font-bold text-gray-800">📋 Menu</h2>
+                            <div class="flex gap-2">
+                                <button onclick="app.expandAllCategories()" class="px-3 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700">📂 Espandi</button>
+                                <button onclick="app.collapseAllCategories()" class="px-3 py-1 text-xs bg-gray-600 text-white rounded hover:bg-gray-700">📁 Chiudi</button>
+                            </div>
+                        </div>
+                        <div class="text-sm text-gray-600">👆 Clicca su una categoria per espanderla • 📝 per note • 🆓 per ordini liberi</div>
+                    </div>
+
+                    <!-- Categorie -->
+                    <div class="p-4 space-y-3">
+                        ${Object.entries(this.menuCategories).map(([category, items]) => {
+                            const isExpanded = this.state.expandedCategories[category];
+                            const itemCount = items.length;
+
+                            return `
+                                <div class="border border-gray-200 rounded-lg overflow-hidden">
+                                    <div onclick="app.toggleCategory('${category.replace(/'/g, "\\'")}')"
+                                        class="flex justify-between items-center p-4 bg-gradient-to-r from-gray-50 to-gray-100 cursor-pointer hover:from-blue-50 hover:to-blue-100 transition-all border-b ${isExpanded ? 'border-gray-300' : ''}">
+                                        <div class="flex items-center gap-3">
+                                            <span class="text-lg transition-transform ${isExpanded ? 'rotate-90' : ''}">▶️</span>
+                                            <h3 class="font-bold text-lg text-gray-800">${category}</h3>
+                                            <span class="px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-xs font-medium">${itemCount} articoli</span>
+                                        </div>
+                                        <div class="text-sm text-gray-500">${isExpanded ? 'Chiudi' : 'Apri'}</div>
+                                    </div>
+
+                                    ${isExpanded ? `
+                                        <div class="bg-white">
+                                            ${items.map(item => `
+                                                <div class="flex justify-between items-start p-4 hover:bg-blue-50 hover:border-l-4 hover:border-blue-500 transition-all border-b border-gray-100 last:border-b-0">
+                                                    <div class="flex-1 cursor-pointer" onclick="app.addToOrder(${JSON.stringify(item).replace(/"/g, '&quot;')})">
+                                                        <div class="font-medium text-gray-900">${item.name}</div>
+                                                        <div class="text-green-600 font-bold text-lg">€${item.price.toFixed(2)}</div>
+                                                        ${item.ingredients ? `<div class="text-xs text-gray-600 mt-1 leading-relaxed">🧄 ${item.ingredients.replace(/\n/g, ', ')}</div>` : ''}
+                                                        ${item.description ? `<div class="text-xs text-gray-500 mt-1 italic">💭 ${item.description.replace(/\n/g, ' ')}</div>` : ''}
+                                                    </div>
+                                                    <div class="ml-3 flex-shrink-0 flex flex-col gap-2">
+                                                        <button onclick="app.addToOrder(${JSON.stringify(item).replace(/"/g, '&quot;')})" class="flex items-center justify-center w-8 h-8 bg-green-100 hover:bg-green-200 rounded-full">
+                                                            <span class="text-green-600 font-bold">+</span>
+                                                        </button>
+                                                        <button onclick="app.showNoteModal(${JSON.stringify(item).replace(/"/g, '&quot;')})" class="flex items-center justify-center w-8 h-8 bg-blue-100 hover:bg-blue-200 rounded-full">
+                                                            <span class="text-blue-600 font-bold">📝</span>
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            `).join('')}
+                                        </div>
+                                    ` : ''}
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                </div>
+
+                <!-- Ordine Corrente -->
+                <div class="w-full md:w-1/2 overflow-y-auto bg-white p-4 border-t md:border-t-0 md:border-l border-gray-200 menu-scrollable"
+                    style="display: ${this.state.activeTab === 'order' || window.innerWidth >= 768 ? 'block' : 'none'};">
+                    <h3 class="font-bold text-lg mb-4">🛒 Ordine Corrente</h3>
+                    ${currentOrder.length === 0 ? `
+                        <div class="text-center text-gray-500 mt-8">
+                            <div class="text-4xl mb-4">📋</div>
+                            <p class="text-lg">Seleziona gli articoli dal menu</p>
+                            <p class="text-sm text-gray-400 mt-2">📝 Personalizza con note</p>
+                            <p class="text-sm text-gray-400 mt-1">🆓 Usa "Ordine Libero" per articoli non in menu</p>
+                        </div>
+                    ` : `
+                        <div class="space-y-3">
+                            ${currentOrder.map((item, index) => `
+                                <div class="flex justify-between items-start p-3 bg-gray-50 rounded-lg border">
+                                    <div class="flex-1">
+                                        <div class="font-medium">${item.name}</div>
+                                        <div class="text-sm text-gray-600">€${item.price.toFixed(2)} cad.</div>
+                                        ${item.isFreeOrder ? `<div class="text-xs text-purple-600 font-medium">🆓 Ordine libero</div>` : ''}
+                                        ${item.ingredients ? `<div class="text-xs text-gray-500 mt-1">🧄 ${item.ingredients}</div>` : ''}
+                                        ${item.note ? `<div class="text-xs text-blue-600 mt-1 font-medium bg-blue-50 p-1 rounded">📝 ${item.note}</div>` : ''}
+                                    </div>
+                                    <div class="flex items-center gap-2 ml-3">
+                                        <div class="flex flex-col gap-1">
+                                            <button onclick="app.removeFromOrder(${index})" class="w-8 h-8 flex items-center justify-center bg-red-100 hover:bg-red-200 rounded-full text-red-600">−</button>
+                                            ${(item.note || item.isFreeOrder) ? `<button onclick="app.showNoteModal(${JSON.stringify({id:item.id,name:item.name,price:item.price}).replace(/"/g, '&quot;')}, ${index})" class="w-8 h-8 flex items-center justify-center bg-blue-100 hover:bg-blue-200 rounded-full text-blue-600">📝</button>` : ''}
+                                        </div>
+                                        <span class="font-bold w-8 text-center">${item.quantity}</span>
+                                        <button onclick="app.addToOrder(${JSON.stringify({id:item.id,name:item.name,price:item.price}).replace(/"/g, '&quot;')})" class="w-8 h-8 flex items-center justify-center bg-green-100 hover:bg-green-200 rounded-full text-green-600">+</button>
+                                        <div class="font-bold text-green-600 w-16 text-right">€${(item.price * item.quantity).toFixed(2)}</div>
+                                    </div>
+                                </div>
+                            `).join('')}
+                            <div class="border-t pt-3 mt-4 bg-green-50 rounded-lg p-4">
+                                <div class="flex justify-between items-center text-xl font-bold">
+                                    <span>💰 Totale:</span>
+                                    <span class="text-green-600">€${this.calculateTotal().toFixed(2)}</span>
+                                </div>
+                                <div class="text-sm text-gray-600 mt-1 text-center">
+                                    ${currentOrder.reduce((sum, item) => sum + item.quantity, 0)} articoli nel carrello
+                                </div>
+                            </div>
+                        </div>
+                    `}
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+
+            renderKitchenView() {
+                return `
+                    <div class="p-6 bg-gray-900 min-h-screen text-white">
+                        <div class="flex justify-between items-center mb-6">
+                            <div>
+                                <h1 class="text-3xl font-bold">👨‍🍳 Dashboard Cucina</h1>
+                                <div class="text-sm text-gray-300 mt-1">${this.state.syncStatus} • Con supporto note e ordini liberi</div>
+                            </div>
+                            <div class="flex flex-wrap justify-center sm:justify-start gap-2 sm:gap-4">
+                                <div class="bg-red-600 px-4 py-2 rounded-lg">
+                                    <span class="font-bold">Ordini Attivi: ${this.state.activeOrders.length}</span>
+                                </div>
+                                <button onclick="app.setState({currentView: 'tables'})" class="flex items-center gap-2 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700">
+                                    ✕ Torna ai Tavoli
+                                </button>
+                            </div>
+                        </div>
+                        
+                        ${this.state.activeOrders.length === 0 ? `
+                            <div class="text-center text-gray-400 mt-20">
+                                <div class="text-6xl mb-4">🍽️</div>
+                                <p class="text-xl">Nessun ordine in preparazione</p>
+                                <p class="text-gray-500">Gli ordini appariranno qui quando vengono inviati</p>
+                            </div>
+                        ` : `
+                            <div class="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+                                ${this.state.activeOrders.map(order => {
+                                    const table = this.tables.find(t => t.id === order.tableNumber);
+                                    
+                                    return `
+                                        <div class="rounded-lg p-6 border-2 ${order.isModified ? 'bg-yellow-800 border-yellow-400 ring-2 ring-yellow-400' : 'bg-orange-800 border-orange-400'}">
+                                            <div class="flex justify-between items-start mb-4">
+                                                <div>
+                                                    <h3 class="text-2xl font-bold">Tavolo ${table?.number}</h3>
+                                                    ${order.label === 'OLD' ? '<span class="ml-2 bg-gray-600 text-white px-2 py-1 rounded text-xs">OLD</span>' : ''}
+
+                                                    <p class="text-base md:text-sm text-gray-500 px-2 text-center md:text-left leading-snug">
+  ${new Date(order.timestamp).toLocaleTimeString('it-IT')}
+</p>
+                                                    ${order.isModified ? `<div class="bg-yellow-500 text-black px-2 py-1 rounded text-xs font-bold mt-1">⚠️ ORDINE MODIFICATO v.${order.version}</div>` : ''}
+                                                </div>
+                                                <div class="text-right">
+                                                    <div class="text-2xl font-bold">€${order.total.toFixed(2)}</div>
+                                                    <div class="text-sm opacity-75">${order.items.reduce((sum, item) => sum + item.quantity, 0)} articoli</div>
+                                                </div>
+                                            </div>
+                                            
+                                            <div class="space-y-2 mb-4">
+                                                ${order.items.map(item => `
+                                                    <div class="bg-gray-800 rounded p-3">
+                                                        <div class="flex justify-between">
+                                                            <span class="font-medium">${item.quantity}x ${item.name}</span>
+                                                            <span>€${(item.price * item.quantity).toFixed(2)}</span>
+                                                        </div>
+                                                        ${item.isFreeOrder ? `
+                                                            <div class="text-xs text-purple-300 mt-1">🆓 Ordine libero</div>
+                                                        ` : ''}
+                                                        ${item.note ? `
+                                                            <div class="text-xs text-yellow-300 mt-1 bg-yellow-900 p-2 rounded">
+                                                                📝 <strong>NOTA:</strong> ${item.note}
+                                                            </div>
+                                                        ` : ''}
+                                                        ${item.ingredients ? `
+                                                            <div class="text-xs text-gray-300 mt-1">
+                                                                🧄 ${item.ingredients.replace(/\n/g, ', ')}
+                                                            </div>
+                                                        ` : ''}
+                                                    </div>
+                                                `).join('')}
+                                            </div>
+                                            
+                                            <button onclick="app.closeOrderFromKitchen(${order.id})" class="w-full bg-green-600 hover:bg-green-700 px-4 py-3 rounded font-bold">
+                                                💰 Cliente ha Pagato - Libera Tavolo
+                                            </button>
+                                        </div>
+                                    `;
+                                }).join('')}
+                            </div>
+                        `}
+                    </div>
+                `;
+            }
+
+async applyTableLayout() {
+    const newTables = [];
+    for (let i = 0; i < this.state.tableCount; i++) {
+        const seats = i % 3 === 0 ? 6 : i % 2 === 0 ? 4 : 2;
+        newTables.push({ id: i + 1, number: i + 1, seats: seats });
+    }
+
+    this.setState({ 
+        customTables: newTables,
+        orders: {},
+        activeOrders: []
+    });
+
+    await firebaseService.update('tables', newTables);
+    await firebaseService.update('orders', {});
+    await firebaseService.update('activeOrders', []);
+
+    alert(`✅ LAYOUT APPLICATO! Tavoli: ${this.state.tableCount}`);
+}
+
+async resetTables() {
+    if (!window.confirm('⚠️ RESET COMPLETO! Cancellare tutto?')) return;
+
+    const newTables = [];
+    for (let i = 0; i < this.state.tableCount; i++) {
+        const seats = i % 3 === 0 ? 6 : i % 2 === 0 ? 4 : 2;
+        newTables.push({ id: i + 1, number: i + 1, seats: seats });
+    }
+
+    this.setState({ 
+        customTables: newTables,
+        showSettings: false,
+        orders: {},
+        activeOrders: []
+    });
+
+    await firebaseService.update('tables', newTables);
+    await firebaseService.update('orders', {});
+    await firebaseService.update('activeOrders', {});
+
+    alert('✅ RESET COMPLETO ESEGUITO!');
+} // ✅ questa parentesi mancava qui!
+
+async deleteOrderFromHistory(orderId) {
+    const updatedHistory = this.state.orderHistory.filter(order => order.id !== orderId);
+    this.setState({ orderHistory: updatedHistory });
+    await firebaseService.update('orderHistory', updatedHistory);
+}
+            
+selectTable(tableId) {
+    const activeOrder = this.state.activeOrders.find(order => order.tableNumber === tableId);
+
+    if (activeOrder) {
+        const conferma = window.confirm(`⚠️ Il tavolo ${tableId} ha già un ordine attivo.\n\nVuoi CHIUDERLO (clicca OK) oppure MODIFICARLO (clicca Annulla)?`);
+        
+        if (conferma) {
+            this.closeOrderFromWaiter(tableId);
+        } else {
+            // Recupera l'ordine attivo per modificarlo
+            const draftOrders = { ...this.state.orders };
+
+            // Etichetta il vecchio ordine come "OLD"
+const updatedOldOrder = { ...activeOrder, label: 'OLD' };
+const updatedActiveOrders = this.state.activeOrders.map(o =>
+    o.id === activeOrder.id ? updatedOldOrder : o
+);
+this.setState({ activeOrders: updatedActiveOrders });
+firebaseService.update('activeOrders', updatedActiveOrders);
+            
+            draftOrders[tableId] = [...activeOrder.items];
+
+            this.setState({
+                orders: draftOrders,
+                selectedTable: tableId,
+                currentView: 'menu'
+            });
+        }
+    } else {
+        this.setState({ selectedTable: tableId, currentView: 'menu' });
+    }
+}
+    
+}
+            
+            
+
+
+        
+        // Inizializza l'app quando Firebase è pronto
+        window.addEventListener('firebaseReady', () => {
+            setTimeout(() => {
+                const app = new ZenzoBarApp();
+                window.app = app;
+                console.log('✅ ZenzoBar App inizializzata correttamente!');
+            }, 500);
+        });
+        
+        // Fallback se Firebase non si carica entro 3 secondi
+        setTimeout(() => {
+            if (!window.app) {
+                console.log('⚠️ Inizializzazione app con fallback...');
+                const app = new ZenzoBarApp();
+                window.app = app;
+            }
+        }, 3000);
+    </script>
+</body>
+</html>
