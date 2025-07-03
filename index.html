@@ -354,6 +354,7 @@ const aiService = new AIAnalyticsService();
                     currentNoteIndex: null,
                     aiAnalysis: null,
                     activeTab: 'menu', 
+                    discount: 0,
                     showAIModal: false
                 };
                 
@@ -495,13 +496,12 @@ const aiService = new AIAnalyticsService();
             }
             
             generateTableLayout(count) {
-                const tables = [];
-                for (let i = 0; i < count; i++) {
-                    const seats = i % 3 === 0 ? 6 : i % 2 === 0 ? 4 : 2;
-                    tables.push({ id: i + 1, number: i + 1, seats: seats });
-                }
-                return tables;
-            }
+    const tables = [];
+    for (let i = 0; i < count; i++) {
+        tables.push({ id: i + 1, number: i + 1 });
+    }
+    return tables;
+}
             
             get tables() {
                 return this.state.customTables.length > 0 ? this.state.customTables : this.generateTableLayout(this.state.tableCount);
@@ -781,6 +781,12 @@ console.log('🧪 addToOrder - scroll check start', document.querySelector('.men
             calculateTotal() {
                 return this.getCurrentOrder().reduce((total, item) => total + (item.price * item.quantity), 0);
             }
+
+calculateTotalWithDiscount() {
+    const total = this.calculateTotal();
+    const discountValue = total * (this.state.discount / 100);
+    return total - discountValue;
+}
             
             async printOrder() {
                 const currentOrder = this.getCurrentOrder();
@@ -1452,9 +1458,34 @@ triggerCSVUpload() {
                             `).join('')}
                             <div class="border-t pt-3 mt-4 bg-green-50 rounded-lg p-4">
                                 <div class="flex justify-between items-center text-xl font-bold">
-                                    <span>💰 Totale:</span>
-                                    <span class="text-green-600">€${this.calculateTotal().toFixed(2)}</span>
-                                </div>
+    <span>💰 Totale:</span>
+    <span class="text-green-600">
+        €${this.calculateTotalWithDiscount().toFixed(2)}
+        ${this.state.discount > 0 ? `<span class="text-xs ml-2 bg-red-100 text-red-600 px-2 py-1 rounded">-${this.state.discount}%</span>` : ''}
+    </span>
+</div>
+
+${this.state.discount > 0 ? `
+    <div class="text-sm text-red-500 text-center">
+        🎁 Sconto applicato: -${this.state.discount}% 
+        (${(this.calculateTotal() * (this.state.discount / 100)).toFixed(2)} €)
+    </div>` : ''}
+
+<div class="text-center mt-3">
+    <label class="text-sm font-medium text-gray-600">Applica Sconto:</label>
+    <div class="flex gap-2 justify-center mt-2">
+        ${[5, 10, 20, 30].map(p => `
+            <button onclick="app.setDiscount(${p})"
+                class="px-2 py-1 text-sm bg-purple-100 hover:bg-purple-200 text-purple-800 rounded">
+                ${p}%
+            </button>
+        `).join('')}
+        <button onclick="app.setDiscount(0)"
+            class="px-2 py-1 text-sm bg-gray-200 hover:bg-gray-300 text-gray-800 rounded">
+            ❌
+        </button>
+    </div>
+</div>
                                 <div class="text-sm text-gray-600 mt-1 text-center">
                                     ${currentOrder.reduce((sum, item) => sum + item.quantity, 0)} articoli nel carrello
                                 </div>
@@ -1551,6 +1582,32 @@ triggerCSVUpload() {
                 `;
             }
 
+setDiscount(percent) {
+    this.setState({ discount: percent });
+    alert(`🎁 Sconto del ${percent}% applicato`);
+}
+            
+confirmGuestCount() {
+    const input = document.getElementById('guestCountInput');
+    const guests = parseInt(input.value);
+
+    if (!guests || guests < 1) {
+        alert('❌ Inserisci un numero valido di persone');
+        return;
+    }
+
+    const tableId = this.state.tempSelectedTable;
+    const updatedTables = this.tables.map(t => t.id === tableId ? { ...t, seats: guests } : t);
+
+    this.setState({ 
+        customTables: updatedTables,
+        selectedTable: tableId,
+        currentView: 'menu'
+    });
+
+    document.getElementById('guestCountModal').classList.add('hidden');
+}
+            
 async applyTableLayout() {
     const newTables = [];
     for (let i = 0; i < this.state.tableCount; i++) {
@@ -1629,8 +1686,10 @@ firebaseService.update('activeOrders', updatedActiveOrders);
             });
         }
     } else {
-        this.setState({ selectedTable: tableId, currentView: 'menu' });
-    }
+    this.state.tempSelectedTable = tableId;
+    document.getElementById('guestCountModal').classList.remove('hidden');
+    return;
+}
 }
     
 }
@@ -1657,5 +1716,22 @@ firebaseService.update('activeOrders', updatedActiveOrders);
             }
         }, 3000);
     </script>
+
+    <!-- Modal scelta numero persone -->
+<div id="guestCountModal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-50 flex items-center justify-center">
+  <div class="bg-white rounded-lg p-6 w-80 max-w-full">
+    <h3 class="text-lg font-bold mb-4">👥 Quante persone al tavolo?</h3>
+    <input id="guestCountInput" type="number" min="1" max="20" placeholder="Numero persone" class="w-full border rounded p-3 mb-4 text-center">
+    <div class="flex gap-3 justify-end">
+      <button onclick="document.getElementById('guestCountModal').classList.add('hidden')" class="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600">
+        Annulla
+      </button>
+      <button onclick="app.confirmGuestCount()" class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">
+        Conferma
+      </button>
+    </div>
+  </div>
+</div>
+    
 </body>
 </html>
